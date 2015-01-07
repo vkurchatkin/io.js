@@ -52,6 +52,7 @@
     startup.processAssert();
     startup.processConfig();
     startup.processNextTick();
+    startup.processPromises();
     startup.processStdio();
     startup.processKillAndExit();
     startup.processSignalHandlers();
@@ -409,6 +410,51 @@
       nextTickQueue.push(obj);
       tickInfo[kLength]++;
     }
+  };
+
+  startup.processPromises = function() {
+    // this should be kept in sync with PromiseRejectEvent in v8.h
+    var kPromiseRejectWithNoHandler = 0;
+    var kPromiseHandlerAddedAfterReject = 1;
+
+    function promiseRejectCallback(event, promise, value) {
+
+      if (event === kPromiseRejectWithNoHandler)
+        promiseRejectWithNoHandlerCallback(promise, value);
+      else
+        promiseHandlerAddedAfterRejectCallback(promise);
+    }
+
+    function promiseRejectWithNoHandlerCallback(promise, value) {
+      var rejection = new PromiseRejection(promise, value);
+      process.emit('unhandledPromiseRejection', promise, rejection);
+
+      if (!rejection.isHandled()) {
+        process.nextTick(function() {
+          throw value;
+        });
+      }
+    }
+
+    function promiseHandlerAddedAfterRejectCallback(promise) {
+      process.emit('unhandledPromiseRejectionHandled', promise);
+    }
+
+    function PromiseRejection(promise, value) {
+      this.promise = promise;
+      this.value = value;
+      this._handled = false;
+    }
+
+    PromiseRejection.prototype.handle = function() {
+      this._handled = true;
+    };
+
+    PromiseRejection.prototype.isHandled = function() {
+      return this._handled;
+    };
+
+    process._setupPromises(promiseRejectCallback);
   };
 
   function evalScript(name) {

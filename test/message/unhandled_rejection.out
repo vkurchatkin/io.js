@@ -1,0 +1,12 @@
+node.js:*
+          throw value;
+                ^
+Error: error
+    at Object.<anonymous> (*test*message*unhandled_rejection.js:*)
+    at Module._compile (module.js:*)
+    at Object.Module._extensions..js (module.js:*)
+    at Module.load (module.js:*)
+    at Function.Module._load (module.js:*)
+    at Function.Module.runMain (module.js:*)
+    at startup (node.js:*)
+    at node.js:*
