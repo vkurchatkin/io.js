@@ -221,6 +221,7 @@ inline Environment::Environment(v8::Local<v8::Context> context,
       printed_error_(false),
       trace_sync_io_(false),
       makecallback_cntr_(0),
+      callback_scope_depth_(0),
       async_wrap_uid_(0),
       debugger_agent_(this),
       http_parser_buffer_(nullptr),
@@ -374,6 +375,14 @@ inline void Environment::set_trace_sync_io(bool value) {
 
 inline int64_t Environment::get_async_wrap_uid() {
   return ++async_wrap_uid_;
+}
+
+inline size_t Environment::callback_scope_depth() const {
+  return callback_scope_depth_;
+}
+
+inline void Environment::set_callback_scope_depth(size_t depth) {
+  callback_scope_depth_ = depth;
 }
 
 inline uint32_t* Environment::heap_statistics_buffer() const {

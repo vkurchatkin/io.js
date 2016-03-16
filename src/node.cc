@@ -1287,6 +1287,116 @@ Local<Value> MakeCallback(Isolate* isolate,
         MakeCallback(env, recv.As<Value>(), callback, argc, argv)));
 }
 
+CallbackScope::CallbackScope(v8::Local<v8::Context> context)
+  :CallbackScope(context, Local<Value>()) {
+}
+
+CallbackScope::CallbackScope(v8::Local<v8::Context> context,
+  Local<Value> target)
+  :context_(context),
+  target_(target),
+  ran_init_callback_(false),
+  has_domain_(false) {
+  Environment* env = Environment::GetCurrent(context_);
+
+  env->set_callback_scope_depth(env->callback_scope_depth() + 1);
+
+  // If you hit this assertion, you forgot to enter the v8::Context first.
+  CHECK_EQ(env->context(), env->isolate()->GetCurrentContext());
+
+  if (!target_.IsEmpty()) {
+    Local<Function> pre_fn = env->async_hooks_pre_function();
+    post_fn_ = env->async_hooks_post_function();
+    Local<Object> object, domain;
+    has_domain_ = false;
+
+    // TODO(trevnorris): Adding "_asyncQueue" to the "this" in the init callback
+    // is a horrible way to detect usage. Rethink how detection should happen.
+    if (target_->IsObject()) {
+      object = target.As<Object>();
+      Local<Value> async_queue_v = object->Get(env->async_queue_string());
+      if (async_queue_v->IsObject())
+        ran_init_callback_ = true;
+    }
+
+    if (env->using_domains()) {
+      CHECK(target_->IsObject());
+      Local<Value> domain_v = object->Get(env->domain_string());
+      has_domain_ = domain_v->IsObject();
+      if (has_domain_) {
+        domain = domain_v.As<Object>();
+        if (domain->Get(env->disposed_string())->IsTrue()) {
+          // TODO(vkurchatkin)
+        }
+      }
+    }
+
+    if (has_domain_) {
+      Local<Value> enter_v = domain->Get(env->enter_string());
+      if (enter_v->IsFunction()) {
+        if (enter_v.As<Function>()->Call(domain, 0, nullptr).IsEmpty()) {
+          FatalError("node::MakeCallback",
+                     "domain enter callback threw, please report this");
+        }
+      }
+    }
+
+    if (ran_init_callback_ && !pre_fn.IsEmpty()) {
+      if (pre_fn->Call(object, 0, nullptr).IsEmpty())
+        FatalError("node::MakeCallback", "pre hook threw");
+    }
+  }
+
+  // TODO(vkurchatkin) set up HandleScope
+  // TODO(vkurchatkin) set up TryCatch
+}
+
+CallbackScope::~CallbackScope() {
+  Environment* env = Environment::GetCurrent(context_);
+  env->set_callback_scope_depth(env->callback_scope_depth() - 1);
+
+  Local<Object> object, domain;
+
+  if (target_->IsObject()) {
+    object = target_.As<Object>();
+  }
+
+  if (ran_init_callback_ && !post_fn_.IsEmpty()) {
+    if (post_fn_->Call(object, 0, nullptr).IsEmpty())
+      FatalError("node::MakeCallback", "post hook threw");
+  }
+
+  // TODO(vkurchatkin) check TryCatch
+  // if (ret.IsEmpty()) {
+  //   return Undefined(env->isolate());
+  // }
+
+  if (has_domain_) {
+    Local<Value> exit_v = domain->Get(env->exit_string());
+    if (exit_v->IsFunction()) {
+      if (exit_v.As<Function>()->Call(domain, 0, nullptr).IsEmpty()) {
+        FatalError("node::MakeCallback",
+                   "domain exit callback threw, please report this");
+      }
+    }
+  }
+
+
+  if (env->callback_scope_depth() == 0) {
+    Environment::TickInfo* info = env->tick_info();
+
+    if (info->length() == 0) {
+      env->isolate()->RunMicrotasks();
+    }
+
+    if (info->length() == 0) {
+      info->set_index(0);
+      return;
+    }
+
+    env->tick_callback_function()->Call(env->process_object(), 0, nullptr);
+  }
+}
 
 enum encoding ParseEncoding(const char* encoding,
                             enum encoding default_encoding) {

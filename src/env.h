@@ -476,6 +476,9 @@ class Environment {
 
   bool KickNextTick(AsyncCallbackScope* scope);
 
+  inline size_t callback_scope_depth() const;
+  inline void set_callback_scope_depth(size_t depth);
+
   inline uint32_t* heap_statistics_buffer() const;
   inline void set_heap_statistics_buffer(uint32_t* pointer);
 
@@ -578,6 +581,7 @@ class Environment {
   bool printed_error_;
   bool trace_sync_io_;
   size_t makecallback_cntr_;
+  size_t callback_scope_depth_;
   int64_t async_wrap_uid_;
   debugger::Agent debugger_agent_;
 
