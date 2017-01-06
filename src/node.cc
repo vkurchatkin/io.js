@@ -4230,6 +4230,9 @@ void Init(int* argc,
   const char no_typed_array_heap[] = "--typed_array_max_size_in_heap=0";
   V8::SetFlagsFromString(no_typed_array_heap, sizeof(no_typed_array_heap) - 1);
 
+  const char ignition[] = "--ignition";
+  V8::SetFlagsFromString(ignition, sizeof(ignition) - 1);
+
   if (!debug_options.debugger_enabled() && !debug_options.inspector_enabled()) {
     RegisterDebugSignalHandler();
   }

@@ -904,6 +904,105 @@ class ContextifyScript : public BaseObject {
   }
 };
 
+class Module: public BaseObject {
+ private:
+  Persistent<v8::Module> module_;
+
+ public:
+  static void Init(Environment* env, Local<Object> target) {
+    HandleScope scope(env->isolate());
+    Local<String> class_name =
+        FIXED_ONE_BYTE_STRING(env->isolate(), "Module");
+
+    Local<FunctionTemplate> module_tmpl = env->NewFunctionTemplate(New);
+    module_tmpl->InstanceTemplate()->SetInternalFieldCount(1);
+    module_tmpl->SetClassName(class_name);
+    env->SetProtoMethod(module_tmpl, "instantiate", Instantiate);
+    env->SetProtoMethod(module_tmpl, "evaluate", Evaluate);
+    env->SetProtoMethod(module_tmpl, "setData", SetData);
+
+    target->Set(class_name, module_tmpl->GetFunction());
+  }
+
+  static void New(const FunctionCallbackInfo<Value>& args) {
+    Environment* env = Environment::GetCurrent(args);
+
+    Module* module = new Module(env, args.This());
+    TryCatch try_catch(env->isolate());
+    Local<String> code = args[0]->ToString(env->isolate());
+    Local<String> filename = args[1]->ToString(env->isolate());
+
+    ScriptOrigin origin(filename);
+    ScriptCompiler::Source source(code, origin);
+
+    MaybeLocal<v8::Module> v8_module = ScriptCompiler::CompileModule(
+      env->isolate(),
+      &source
+    );
+
+    module->module_.Reset(env->isolate(), v8_module.ToLocalChecked());
+  }
+
+  static void Instantiate(const FunctionCallbackInfo<Value>& args) {
+    Environment* env = Environment::GetCurrent(args);
+    HandleScope scope(env->isolate());
+    Module* module;
+    ASSIGN_OR_RETURN_UNWRAP(&module, args.Holder());
+    Local<v8::Module> v8_module = PersistentToLocal(env->isolate(), module->module_);
+    v8_module->Instantiate(env->context(), ResolveModuleCallback, args[0]);
+  }
+
+  static MaybeLocal<v8::Module> ResolveModuleCallback(Local<v8::Context> context,
+                                           Local<v8::String> specifier,
+                                           Local<v8::Module> referrer,
+                                           Local<v8::Value> data) {
+    v8::Isolate* isolate = context->GetIsolate();
+    Environment* env = Environment::GetCurrent(isolate);
+    Local<v8::Function> fn = data.As<v8::Function>();
+
+    Local<Value> emb_data = referrer->GetEmbedderData();
+    Local<Value> argv[2] = { specifier, emb_data };
+    Local<Object> ret = fn->Call(
+      context,
+      v8::Null(isolate),
+      2,
+      argv
+    ).ToLocalChecked().As<Object>();
+
+    Module* module;
+    ASSIGN_OR_RETURN_UNWRAP(&module, ret, MaybeLocal<v8::Module>());
+    Local<v8::Module> v8_module = PersistentToLocal(env->isolate(), module->module_);
+    return MaybeLocal<v8::Module>(v8_module);
+  }
+
+  static void Evaluate(const FunctionCallbackInfo<Value>& args) {
+    Environment* env = Environment::GetCurrent(args);
+    HandleScope scope(env->isolate());
+    Module* module;
+    ASSIGN_OR_RETURN_UNWRAP(&module, args.Holder());
+    Local<v8::Module> v8_module = PersistentToLocal(env->isolate(), module->module_);
+    v8_module->Evaluate(env->context());
+  }
+
+  static void SetData(const FunctionCallbackInfo<Value>& args) {
+    Environment* env = Environment::GetCurrent(args);
+    HandleScope scope(env->isolate());
+    Module* module;
+    ASSIGN_OR_RETURN_UNWRAP(&module, args.Holder());
+    Local<v8::Module> v8_module = PersistentToLocal(env->isolate(), module->module_);
+    v8_module->SetEmbedderData(args[0]);
+  }
+
+  Module(Environment* env, Local<Object> object)
+      : BaseObject(env, object) {
+    MakeWeak<Module>(this);
+  }
+
+  ~Module() override {
+    module_.Reset();
+  }
+};
+
 
 void InitContextify(Local<Object> target,
                     Local<Value> unused,
@@ -911,6 +1010,7 @@ void InitContextify(Local<Object> target,
   Environment* env = Environment::GetCurrent(context);
   ContextifyContext::Init(env, target);
   ContextifyScript::Init(env, target);
+  Module::Init(env, target);
 }
 
 }  // namespace node
